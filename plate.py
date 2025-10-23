@@ -6,7 +6,9 @@ This will fix the remaining issues (too much background, edge noise)
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-
+import pandas as pd
+from pathlib import Path
+import os
 
 def segment_depth_based_improved(depth_raw, threshold_percentile=80):
     """
@@ -194,32 +196,107 @@ def segment_recommended(depth_raw):
 # ==========================================
 # USAGE EXAMPLE
 # ==========================================
+def run_all_image():
+    # --- Minimal config ---
+    csv_path  = 'train_index.csv'     # columns: dish_id,label,rgb_path,depth_color_path,depth_raw_path
+    root_dir  = '.'                   # base dir for relative paths
+
+    df = pd.read_csv(csv_path)
+
+    for i, row in df.iterrows():
+        dish_id   = str(row['dish_id'])
+        rgb_path  = Path(root_dir) / Path(str(row['rgb_path']).replace('\\', '/'))
+        depth_path= Path(root_dir) / Path(str(row['depth_raw_path']).replace('\\', '/'))
+
+        rgb  = cv2.imread(str(rgb_path), cv2.IMREAD_COLOR)
+        if rgb is None:
+            print(f"[skip] RGB not found: {rgb_path}")
+            continue
+        rgb  = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+
+        depth = cv2.imread(str(depth_path), cv2.IMREAD_ANYDEPTH)
+        if depth is None:
+            print(f"[skip] DEPTH not found: {depth_path}")
+            continue
+
+        print(f"[{i+1}/{len(df)}] {dish_id} -> run try_all_methods")
+        # masks = try_all_methods(rgb, depth)  # dict[name -> mask ndarray]
+
+        # out_dir = Path(output_dir) / dish_id
+        # out_dir.mkdir(parents=True, exist_ok=True)
+        try_best_methods(rgb, depth, dish_id, out_dir=r"C:\Users\Admin\Documents\GitHub\CV-group-project\outputs")
+        # for name, m in masks.items():
+        #     if m is None:
+        #         continue
+        #     # Minimal dtype handling: bool -> uint8 0/255
+        #     if m.dtype == bool:
+        #         m = (m.astype(np.uint8) * 255)
+        #     # Resize to match RGB HxW if needed (keep NEAREST for binary masks)
+        #     if m.shape[:2] != rgb.shape[:2]:
+        #         m = cv2.resize(m, (rgb.shape[1], rgb.shape[0]), interpolation=cv2.INTER_NEAREST)
+        #     cv2.imwrite(str(out_dir / f"{name}.png"), m if m.ndim == 2 else cv2.cvtColor(m, cv2.COLOR_RGB2BGR))
+
+def try_best_methods(rgb_image, depth_raw, dish_id, out_dir="outputs"):
+    """
+    Run only the current (baseline) segmentation and save results.
+    - Saves overlay image: out_dir / f"dish{dish_id}_masked.png"
+    - Saves binary mask:   out_dir / f"dish{dish_id}_mask.png"
+    Returns:
+        mask (np.bool_ array)
+    """
+
+    # --- ensure output directory exists ---
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+    # --- Current baseline segmentation ---
+    # (keep your original parameters for minimal change)
+    mask = segment_depth_based_improved(depth_raw, threshold_percentile=50)
+    mask = clean_mask_aggressive(mask, min_area=15000)
+
+    # --- Build overlay (dim background) ---
+    overlay = rgb_image.copy()
+    overlay[~mask] = (overlay[~mask] * 0.3).astype(np.uint8)
+
+    # --- Save results ---
+    base = Path(out_dir) / f"dish_{dish_id}"
+    # Save overlay (convert RGB -> BGR for cv2.imwrite)
+    cv2.imwrite(str(base.with_name(base.name + "_masked").with_suffix(".png")),
+                cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+    # Save binary mask as 0/255 PNG
+    cv2.imwrite(str(base.with_name(base.name + "_unmask").with_suffix(".png")),
+                (mask.astype(np.uint8) * 255))
+
+    return mask
 
 if __name__ == "__main__":
-    import pandas as pd
-    from pathlib import Path
+    run_all_image()
+#     import pandas as pd
+#     from pathlib import Path
     
-    # Configuration
-    csv_path = 'train_index.csv'
-    root_dir = '.'
-    dish_index = 0
+#     # Configuration
+#     csv_path = 'train_index.csv'
+#     root_dir = '.'
+#     dish_index = 0
     
-    # Load data
-    df = pd.read_csv(csv_path)
-    row = df.iloc[dish_index]
+#     # Load data
+#     df = pd.read_csv(csv_path)
+#     row = df.iloc[dish_index]
     
-    # Read images
-    rgb_path = row['rgb_path'].replace('\\', '/')
-    depth_path = row['depth_raw_path'].replace('\\', '/')
+#     # Read images
+#     rgb_path = row['rgb_path'].replace('\\', '/')
+#     depth_path = row['depth_raw_path'].replace('\\', '/')
     
-    rgb_image = cv2.imread(str(Path(root_dir) / rgb_path))
-    rgb_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2RGB)
+#     rgb_image = cv2.imread(str(Path(root_dir) / rgb_path))
+#     rgb_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2RGB)
     
-    depth_raw = cv2.imread(str(Path(root_dir) / depth_path), cv2.IMREAD_ANYDEPTH)
+#     depth_raw = cv2.imread(str(Path(root_dir) / depth_path), cv2.IMREAD_ANYDEPTH)
     
-    print(f"\n{'='*60}")
-    print(f"Testing improved segmentation on {row['dish_id']}")
-    print(f"{'='*60}\n")
+#     print(f"\n{'='*60}")
+#     print(f"Testing improved segmentation on {row['dish_id']}")
+#     print(f"{'='*60}\n")
     
-    # Try all methods
-    masks = try_all_methods(rgb_image, depth_raw)
+#     # Try all methods
+#     masks = try_all_methods(rgb_image, depth_raw)
+
+
+
